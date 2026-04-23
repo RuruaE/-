@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>マリガン練習</title>
+</head>
+
+<body onload="init()">
+
+<h2>エボルヴマリガンツール</h2>
+
+<details>
+  <summary style="cursor:pointer; font-weight:bold; text-decoration: underline;">
+  テンプレ一覧
+ </summary>
+
+ <button onclick="setTemplate('comboe')">コンボエルフ</button>
+ <button onclick="setTemplate('rush')">速攻デッキ</button>
+ <button onclick="setTemplate('dragon')">ドラゴンデッキ</button>
+
+</details>
+
+<br>
+
+<details>
+  <summary style="cursor:pointer; font-weight:bold; text-decoration: underline;">
+    デッキ保存
+  </summary>
+
+  <br>
+
+  <input id="deckName" placeholder="デッキ名">
+
+  <br><br>
+
+  <textarea id="deckSaveArea"
+    style="width:80%; height:150px; font-size:14px;"
+    placeholder="ここに保存用のデッキリストを書ける"></textarea>
+
+  <br><br>
+
+<button onclick="saveDeckFromArea()">この内容を保存</button>
+
+</details>
+
+<br>
+
+<details>
+  <summary style="cursor:pointer; font-weight:bold; text-decoration: underline;">
+    保存デッキ
+  </summary>
+
+  <br>
+
+  <div id="savedDecks"></div>
+</details>
+
+<br>
+
+<details>
+  <summary style="cursor:pointer; font-weight:bold; text-decoration: underline;">
+    共有リンク読み込み
+  </summary>
+
+  <br>
+
+  <input id="shareInput" style="width:80%" placeholder="ここに共有URL貼る">
+
+  <br><br>
+
+  <button onclick="loadSharedDeck()">読み込み</button>
+
+  <br><br>
+
+</details>
+
+<br>
+
+<select id="deckSelector" onchange="selectDeck()"></select>
+
+<br><br>
+
+
+<textarea id="deckInput"
+  style="width:80%; height:300px; font-size:16px;"
+  placeholder="例：
+覇極 3
+封じられし熾天使 3
+Amazon/ArK 3">
+</textarea>
+
+<br><br>
+
+<button onclick="startGame()">ゲーム開始/リセット</button>
+<button onclick="mulligan()">マリガン</button>
+<button onclick="keep()">キープ</button>
+
+<h3 id="result"></h3>
+
+<h3>履歴</h3>
+<div id="history"
+  style="width:80%; height:200px;
+         overflow-y:auto;
+         border:1px solid #ccc;
+         padding:5px;
+         line-height:1.6;">
+</div>
+
+<div id="toast" style="
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,0.8);
+  color: white;
+  padding: 10px 15px;
+  border-radius: 8px;
+  display: none;
+  font-size: 14px;
+"></div>
+
+<script>
+
+// =====================
+// サンプルリスト
+// =====================
+
+function setTemplate(type) {
+  const textarea = document.getElementById("deckInput");
+
+  if (type === "comboe") {
+    textarea.value =
+`アクティブエルフ・メイ 2
+深緑の弓使い・アリサ 3
+小さな勇士・スクナ 3
+ピュアクリスタリア・リリィ 1
+優美な猫姉妹・シャム＆シャマ 3
+自然の導き 3
+対空射撃 3
+爆砕の傭兵・フィーナ 3
+不思議な青空・アリス 3
+マドロスエルフ 3
+ロイヤルクリスタリア・ティア 3
+（渚の花嫁）新田美波 3
+フロストクリスタリア・エリン 3
+迸る光明・アポロン 2
+アナスタシア 2
+`;
+  }
+
+  if (type === "rush") {
+    textarea.value =
+`速攻兵 4
+突撃ドラゴン 3
+火の鳥 3
+サンプルカード 30`;
+  }
+
+  if (type === "dragon") {
+    textarea.value =
+`青眼の白龍 3
+ドラゴン 4
+火竜 4
+竜の牙 3
+サンプルカード 26`;
+  }
+}
+
+// =====================
+// データ
+// =====================
+let currentDeck = [];
+let currentHand = [];
+let history = [];
+
+// =====================
+// 初期化
+// =====================
+function init() {
+  document.getElementById("result").innerText = "";
+  renderSavedDecks();
+  updateDeckSelector();
+}
+
+// =====================
+// デッキ生成
+// =====================
+function createDeck() {
+  const text = document.getElementById("deckInput").value;
+  const lines = text.split("\n");
+
+  let deck = [];
+
+  lines.forEach(line => {
+    if (!line.trim()) return;
+
+    // 全角→半角
+    line = line.replace(/　/g, " ").trim();
+
+    // 最後の数字を枚数として取得
+    const match = line.match(/(.+?)[\s×]*([0-9]+)$/);
+    if (!match) return;
+
+    const name = match[1].trim();
+    const count = parseInt(match[2]);
+
+    if (isNaN(count)) return;
+
+    for (let i = 0; i < count; i++) {
+      deck.push(name);
+    }
+  });
+
+  return deck;
+}
+
+// =====================
+// ゲーム開始
+// =====================
+function startGame() {
+  history = [];
+  renderHistory();
+
+  currentDeck = createDeck();
+
+  if (currentDeck.length !== 40) {
+  showToast("デッキは40枚にして");
+  return;
+ }
+
+  shuffle(currentDeck);
+  drawHand();
+}
+
+// =====================
+// シャッフル
+// =====================
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+}
+
+// =====================
+// ドロー
+// =====================
+function drawHand() {
+  currentHand = currentDeck.slice(0, 4);
+  showHand();
+}
+
+function showHand() {
+  document.getElementById("result").innerHTML =
+  "・初手<br>" + currentHand.map(card => card).join("<br>");
+}
+// =====================
+// マリガン
+// =====================
+function mulligan() {
+  addHistory("マリガン");
+  shuffle(currentDeck);
+  drawHand();
+}
+
+// =====================
+// キープ
+// =====================
+
+function keep() {
+  addHistory("キープ");
+
+  document.getElementById("result").innerHTML =
+    "・キープ<br>" +
+    currentHand.map(c => "・" + c).join("<br>");
+
+  showToast("キープ");
+}
+
+// =====================
+// 履歴
+// =====================
+function addHistory(action) {
+  history.push({
+    action,
+    hand: [...currentHand]
+  });
+
+  renderHistory();
+}
+
+function renderHistory() {
+  const el = document.getElementById("history");
+
+  el.innerHTML = history.map((h, i) => {
+    return `${i + 1}. ${h.action}: ${h.hand.join(", ")}`;
+  }).join("<br>");
+
+  el.scrollTop = el.scrollHeight;
+}
+
+// =====================
+// デッキ保存
+// =====================
+
+function saveDeckFromArea() {
+  const name = document.getElementById("deckName").value.trim();
+  const text = document.getElementById("deckSaveArea").value.trim();
+
+  if (!name) {
+    alert("デッキ名入れて");
+    return;
+  }
+
+  if (!text) {
+    alert("中身が空");
+    return;
+  }
+
+  let decks = JSON.parse(localStorage.getItem("decks") || "{}");
+
+  if (decks[name] && !confirm("上書きする？")) return;
+
+  decks[name] = text;
+  localStorage.setItem("decks", JSON.stringify(decks));
+
+  renderSavedDecks();
+  updateDeckSelector();
+}
+
+// =====================
+// 保存デッキ表示
+// =====================
+function renderSavedDecks() {
+  const el = document.getElementById("savedDecks");
+  const decks = JSON.parse(localStorage.getItem("decks") || "{}");
+
+  el.innerHTML = Object.keys(decks).map(name => {
+    return `
+      <div style="margin-bottom:6px;">
+        <button onclick="loadDeck('${name}')">${name}</button>
+        <button onclick="shareDeck('${name}')">共有</button>
+        <button onclick="deleteDeck('${name}')">削除</button>
+      </div>
+    `;
+  }).join("");
+}
+
+function shareDeck(name) {
+  const decks = JSON.parse(localStorage.getItem("decks") || "{}");
+  const text = decks[name];
+
+  if (!text) return;
+
+  const encoded = encodeURIComponent(text);
+  const url =
+    location.origin +
+    location.pathname +
+    "?name=" + encodeURIComponent(name) +
+    "&deck=" + encoded;
+
+  navigator.clipboard.writeText(url)
+    .then(() => showToast("コピーした"))
+    .catch(() => showToast("コピー失敗"));
+}
+
+function loadFromURL() {
+  const params = new URLSearchParams(location.search);
+  const deck = params.get("deck");
+  const name = params.get("name"); // ★追加
+
+  if (!deck) return;
+
+  const decoded = decodeURIComponent(deck);
+
+  // 表示
+  document.getElementById("deckInput").value = decoded;
+
+  // ★保存デッキにも追加
+  let decks = JSON.parse(localStorage.getItem("decks") || "{}");
+
+  const deckName = name || "共有デッキ_" + Date.now();
+
+  decks[deckName] = decoded;
+
+  localStorage.setItem("decks", JSON.stringify(decks));
+
+  // UI更新
+  renderSavedDecks();
+  updateDeckSelector();
+}
+
+// =====================
+// 読み込み
+// =====================
+function loadDeck(name) {
+  const decks = JSON.parse(localStorage.getItem("decks") || "{}");
+  document.getElementById("deckInput").value = decks[name];
+}
+
+function loadSharedDeck() {
+  const url = document.getElementById("shareInput").value.trim();
+
+  if (!url) {
+    alert("URL入れて");
+    return;
+  }
+
+  try {
+    const u = new URL(url);
+    const params = new URLSearchParams(u.search);
+
+    const name = params.get("name") || "共有デッキ";
+    const deck = params.get("deck");
+
+    if (!deck) {
+      alert("デッキデータなし");
+      return;
+    }
+
+    const decoded = decodeURIComponent(deck);
+
+    // textareaに表示
+    document.getElementById("deckInput").value = decoded;
+
+    // ★保存デッキにも追加
+    let decks = JSON.parse(localStorage.getItem("decks") || "{}");
+
+    let finalName = name;
+
+    // 被り回避
+    if (decks[finalName]) {
+      finalName = name + "_" + Date.now();
+    }
+
+    decks[finalName] = decoded;
+
+    localStorage.setItem("decks", JSON.stringify(decks));
+
+    renderSavedDecks();
+    updateDeckSelector();
+
+    alert("読み込み＆保存した");
+  } catch (e) {
+    alert("URLが変");
+  }
+}
+
+// =====================
+// 削除
+// =====================
+function deleteDeck(name) {
+  let decks = JSON.parse(localStorage.getItem("decks") || "{}");
+  delete decks[name];
+  localStorage.setItem("decks", JSON.stringify(decks));
+  renderSavedDecks();
+  updateDeckSelector();
+}
+
+function updateDeckSelector() {
+  const select = document.getElementById("deckSelector");
+  const decks = JSON.parse(localStorage.getItem("decks") || "{}");
+
+  select.innerHTML = '<option value="">デッキ選択</option>';
+
+  Object.keys(decks).forEach(name => {
+    const option = document.createElement("option");
+    option.value = name;
+    option.textContent = name;
+    select.appendChild(option);
+  });
+}
+
+function selectDeck() {
+  const name = document.getElementById("deckSelector").value;
+  if (!name) return;
+
+  const decks = JSON.parse(localStorage.getItem("decks") || "{}");
+  document.getElementById("deckInput").value = decks[name];
+}
+
+function showToast(msg) {
+  const toast = document.getElementById("toast");
+  toast.innerText = msg;
+  toast.style.display = "block";
+
+  setTimeout(() => {
+    toast.style.display = "none";
+  }, 1500);
+}
+
+</script>
+
+</body>
+</html>
