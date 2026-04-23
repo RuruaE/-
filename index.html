@@ -259,8 +259,11 @@ function showHand() {
 // =====================
 function mulligan() {
   addHistory("マリガン");
+
   shuffle(currentDeck);
   drawHand();
+
+  showToast("マリガン");
 }
 
 // =====================
@@ -270,9 +273,8 @@ function mulligan() {
 function keep() {
   addHistory("キープ");
 
-  document.getElementById("result").innerHTML =
-    "・キープ<br>" +
-    currentHand.map(c => "・" + c).join("<br>");
+  shuffle(currentDeck);
+  drawHand();
 
   showToast("キープ");
 }
@@ -488,6 +490,8 @@ function showToast(msg) {
     toast.style.display = "none";
   }, 1500);
 }
+
+
 
 </script>
 
